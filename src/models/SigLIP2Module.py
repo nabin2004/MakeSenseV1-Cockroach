@@ -19,13 +19,15 @@ class SigLIP2Module:
         if isinstance(image, Image.Image):
             image.save(buf, format="PNG")
             img_bytes = buf.getvalue()
-        else:
-            raise ValueError("Expected PIL.Image.Image for caching")
+        # else:
+        #     raise ValueError("Expected PIL.Image.Image for caching")
 
-        hasher = hashlib.sha256(img_bytes)
-        if text:
-            hasher.update(text.encode("utf-8"))
-        return hasher.hexdigest()
+        # hasher = hashlib.sha256(img_bytes)
+        # if text:
+        #     hasher.update(text.encode("utf-8"))
+        # return hasher.hexdigest()
+        
+        return
 
     def forward(self, image, text: str = None, normalize=True, use_cache=True, return_hidden=False):
         """

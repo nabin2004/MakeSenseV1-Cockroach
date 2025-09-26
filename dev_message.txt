@@ -1,0 +1,93 @@
+### **1. Why we need a projection**
+
+- SigLIP2 outputs **image embeddings** of shape `[batch, embed_dim]` (or `[batch, seq_len, embed_dim]` if patch-based).  
+- Gemma3 expects input **token embeddings** of size `[batch, seq_len, hidden_dim]` (its internal hidden size).  
+- Usually: `embed_dim` from SigLIP2 ≠ `hidden_dim` from Gemma3.  
+- The **projection layer** is just a learnable mapping to align dimensions:
+
+```text
+SigLIP2 embedding space → Gemma3 embedding space
+```
+
+- This way, the LM can “see” the image as if it were a sequence of token embeddings.
+
+---
+
+### **2. How to implement projection**
+
+#### **Option A: Linear layer (most common)**
+
+```python
+import torch.nn as nn
+
+# Suppose
+siglip_embed_dim = 512    # output dim from SigLIP2
+lm_hidden_dim = 1024      # hidden size of Gemma3
+
+self.proj_layer = nn.Linear(siglip_embed_dim, lm_hidden_dim)
+```
+
+- Input: `[batch, seq_len, siglip_embed_dim]`  
+- Output: `[batch, seq_len, lm_hidden_dim]`  
+
+#### **Option B: MLP (optional, more expressive)**
+
+```python
+self.proj_layer = nn.Sequential(
+    nn.Linear(siglip_embed_dim, lm_hidden_dim),
+    nn.ReLU(),
+    nn.Linear(lm_hidden_dim, lm_hidden_dim)
+)
+```
+
+- Slightly more capacity, can learn nonlinear alignment.
+
+---
+
+### **3. Feeding projected embeddings into the LM**
+
+There are two common strategies:
+
+#### **A. Prepend as “pseudo tokens”**
+
+1. Project image embeddings → LM hidden size.  
+2. Prepend them to the token embeddings of the input text:  
+
+```python
+# text embeddings
+inputs = self.tokenizer(text, return_tensors="pt").to(device)
+text_embeds = self.model.get_input_embeddings()(inputs.input_ids)
+
+# concatenate image embeddings as prefix
+concat_embeds = torch.cat([proj_embeds, text_embeds], dim=1)
+
+# pass into LM directly (forward with inputs_embeds)
+outputs = self.model(inputs_embeds=concat_embeds, output_hidden_states=True)
+```
+
+- This is essentially how LLaVA / Flamingo do multimodal conditioning.  
+- The LM now “sees” the image embedding as if it were the first few tokens of text.
+
+#### **B. Replace LM embeddings entirely**
+
+- Sometimes for experiments, you can feed **only image embeddings** (no text).  
+- Then Gemma3 acts purely on the visual input — but you usually lose linguistic context unless you fine-tune.  
+
+---
+
+### **4. About LM embeddings**
+
+- Yes — the **LM embeddings** are the standard token embeddings inside Gemma3.  
+- You have the option to take embeddings from `model.get_input_embeddings()` or from a wrapper like `EmbeddingGemma` if you’ve pre-wrapped it for convenience.  
+- The projection just **matches SigLIP2 output to the LM embedding dimension**.
+
+---
+
+### **5. Summary pipeline (ready-to-run)**
+
+```text
+image → SigLIP2 → image_embeds → proj_layer → [pseudo tokens]
+text → tokenizer → token embeddings
+concat → LM (inputs_embeds) → output hidden states → downstream tasks
+```
+

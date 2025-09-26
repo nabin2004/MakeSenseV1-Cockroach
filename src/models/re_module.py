@@ -29,9 +29,6 @@ class REModule(nn.Module):
         """
         relations = []
 
-        # If batch dimension missing, add one
-        if text_embedding.dim() == 2:
-            text_embedding = text_embedding.unsqueeze(0)
 
         for i in range(len(entities)):
             for j in range(i + 1, len(entities)):
